@@ -56,3 +56,13 @@ python -m pytest tests -q
 ```
 
 Live provider operations need cloud credentials, DNS resolution and Atlas Network Access. This starter is not yet multi tenant; keep it local until authentication, ownership authorization and rate limits are added.
+
+
+## Render and Vercel CORS configuration
+
+Set `FRONTEND_ORIGIN` in Render to the exact Vercel origin, for example `https://evzax.vercel.app` (no backslashes, no trailing slash, and no `/workspace` path). Multiple origins may be comma separated, for example `https://evzax.vercel.app,http://localhost:5173`. Save the environment changes and redeploy/restart the Render service. For cookie authentication across Vercel and Render, set `AUTH_COOKIE_SECURE=true` and `AUTH_COOKIE_SAMESITE=none`; keep frontend requests configured with credentials.
+
+
+### GitHub repository indexing limits
+
+Defaults: `MAX_REPOSITORY_FILES=2500`, `MAX_FILE_BYTES=750000`, `MAX_UPLOAD_MB=60`, and `MAX_CODE_CHUNKS=5000`. Override these environment variables on Render. If indexing is killed due to memory pressure, lower the file/chunk caps before increasing the instance size. Add `GITHUB_TOKEN` for higher GitHub API rate limits. Repository inputs may be entered as `github.com/owner/repo` or a full HTTPS URL.

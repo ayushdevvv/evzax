@@ -1031,3 +1031,64 @@ kbd { border-radius: 7px; }
 @keyframes toast-enter{from{opacity:0;transform:translate3d(16px,-7px,0) scale(.98)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}@keyframes toast-life{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 .route-loading{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#080b11;color:#9aa8bc;font-size:13px}.loading-orbit{width:28px;height:28px;border:2px solid rgba(103,231,178,.16);border-top-color:#67e7b2;border-radius:50%;animation:spin .7s linear infinite}
 @media(max-width:520px){.toast-viewport{top:12px;right:12px;width:calc(100vw - 24px)}}
+
+
+/* EVZAX responsive pass: tighter type and predictable drawer behavior */
+.side-label-spaced { margin-top: 14px; }
+@media (max-width: 900px) {
+  .sidebar { width: min(304px, calc(100vw - 44px)); padding: 12px 12px 14px; transform: translateX(-105%); transition: transform .32s cubic-bezier(.2, .8, .2, 1); box-shadow: 24px 0 70px rgba(0,0,0,.42); will-change: transform; }
+  .menu-open .sidebar { transform: translateX(0); }
+  .menu-open .shell-scrim { display: block; position: fixed; inset: 0; z-index: 60; background: rgba(3, 6, 11, .68); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: scrim-in .2s ease both; }
+  .sidebar-head { flex: none; }
+  .side-link { min-height: 42px; font-size: 14px; }
+  .page-head { gap: 14px; }
+  .page-head h1 { font-size: clamp(24px, 5vw, 34px); }
+  .block-head h2 { font-size: 18px; }
+  .repo-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+  .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .page-wrap, .page-body, .app-main { min-width: 0; }
+  .page-body { overflow-x: hidden; }
+  .topbar { min-width: 0; }
+  .topbar-right { gap: 8px; }
+  .topbar-right > .btn { padding-inline: 10px; }
+}
+@media (max-width: 640px) {
+  html { font-size: 14px; } body { font-size: 14px; }
+  .auth-page { min-height: 100svh; padding: 64px 14px 20px; align-items: center; }
+  .auth-back { top: 18px; left: 16px; font-size: 13px; }
+  .auth-card { width: min(420px, 100%); border-radius: 20px; }
+  .auth-inner { padding: 26px 20px 24px; gap: 7px; }
+  .auth-inner h1 { margin-top: 12px; font-size: clamp(23px, 6vw, 28px); }
+  .auth-sub { margin-bottom: 8px; font-size: 13px; }
+  .auth-inner form { gap: 12px; }
+  .auth-field { gap: 6px; font-size: 13px; }
+  .auth-input { height: 46px; gap: 9px; padding-inline: 11px; }
+  .auth-input input { min-width: 0; font-size: 14px; }
+  .auth-inner .btn-lg { height: 44px; font-size: 14px; border-radius: 12px; }
+  .auth-switch { font-size: 12.5px; }
+  .page-wrap { padding: 18px 12px 32px; }
+  .page-head { align-items: flex-start; flex-wrap: wrap; }
+  .page-head .btn { height: 38px; font-size: 12.5px; }
+  .page-head h1 { font-size: 25px; }
+  .eyebrow { font-size: 10px; letter-spacing: .11em; }
+  .block { margin-top: 22px; }
+  .block-head { gap: 8px; }
+  .repo-grid, .skeleton-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .repo-tile { padding: 15px; border-radius: 16px; }
+  .repo-tile h3 { font-size: 15px; overflow-wrap: anywhere; }
+  .repo-tile p, .repo-tile-stats, .repo-tile-foot { font-size: 11.5px; }
+  .tool-grid { gap: 9px; }
+  .tool { min-width: 0; padding: 13px; gap: 7px; }
+  .tool strong { font-size: 13px; } .tool span { font-size: 11px; }
+  .empty { padding: 34px 16px; } .empty h3 { font-size: 17px; }
+  .notice { align-items: flex-start; padding: 10px 12px; font-size: 12px; }
+  .btn { max-width: 100%; }
+  .site-footer-grid { gap: 22px; padding: 34px 0 26px; }
+  .site-footer-base { flex-wrap: wrap; font-size: 11px; }
+}
+@media (max-width: 380px) {
+  .auth-inner { padding: 22px 15px 20px; }
+  .tool-grid { grid-template-columns: minmax(0, 1fr); }
+  .topbar-right > .btn { display: none; }
+  .page-head .btn { white-space: normal; }
+}

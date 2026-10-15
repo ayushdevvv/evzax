@@ -23,13 +23,24 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
     auth_session_minutes: int = 10080
-    max_upload_mb: int = 40
-    max_repository_files: int = 1200
-    max_file_bytes: int = 500_000
-    max_code_chunks: int = 3000
+    max_upload_mb: int = 60
+    max_repository_files: int = 2500
+    max_file_bytes: int = 750_000
+    max_code_chunks: int = 5000
     max_document_mb: int = 20
     max_document_pages: int = 300
     max_document_chunks: int = 1200
+
+    @property
+    def allowed_frontend_origins(self) -> list[str]:
+        """Normalize one or more browser origins from FRONTEND_ORIGIN.
+
+        Render may use a comma-separated value, e.g.
+        https://evzax.vercel.app,http://localhost:5173.
+        Origins must be scheme + host + optional port only, with no path.
+        """
+        values = (value.strip().rstrip("/") for value in self.frontend_origin.split(","))
+        return list(dict.fromkeys(value for value in values if value))
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_ROOT / ".env",

@@ -1,5 +1,5 @@
-import { Code2, GitBranch, LayoutGrid, Menu, Plus } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { Code2, FileText, FlaskConical, GitBranch, GitCommitHorizontal, LayoutGrid, Menu, Plus } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router-dom'
 import Brand from '../Brand'
 
 function navClass(state) {
@@ -20,6 +20,10 @@ function RepoLink(props) {
 export default function Sidebar(props) {
   const repositories = props.repositories || []
   const visible = repositories.slice(0, 10)
+  const location = useLocation()
+  const match = location.pathname.match(/^\/repositories\/([^/]+)/)
+  const activeRepo = repositories.find(function (repo) { return match && repo.id === match[1] }) || repositories[0]
+  const repoBase = activeRepo ? '/repositories/' + activeRepo.id : '/connect' 
 
   function renderRepo(repo) {
     return <RepoLink key={repo.id} repo={repo} />
@@ -36,6 +40,10 @@ export default function Sidebar(props) {
         <span className="side-label">WORKSPACE</span>
         <NavLink to="/workspace" end className={navClass} title="Overview"><LayoutGrid size={16} /><span>Overview</span></NavLink>
         <NavLink to="/connect" className={navClass} title="Connect codebase"><Plus size={16} /><span>Connect codebase</span></NavLink>
+        <span className="side-label side-label-spaced">TOOLS</span>
+        <NavLink to={repoBase === '/connect' ? '/connect' : repoBase + '/documents'} className={navClass} title="Documents"><FileText size={16} /><span>Documents</span></NavLink>
+        <NavLink to={repoBase === '/connect' ? '/connect' : repoBase + '/versions'} className={navClass} title="Versions"><GitCommitHorizontal size={16} /><span>Versions</span></NavLink>
+        <NavLink to={repoBase === '/connect' ? '/connect' : repoBase + '/evaluation'} className={navClass} title="Retrieval lab"><FlaskConical size={16} /><span>Retrieval lab</span></NavLink>
       </nav>
 
       <nav className="side-group side-scroll">

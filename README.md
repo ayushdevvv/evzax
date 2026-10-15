@@ -205,3 +205,8 @@ db.repo_chunks.dropIndex("gitcontext_chunks_text")
 
 Then restart the backend and retry indexing. The app will recreate the text index with the corrected `language_override`. Don't delete the `repo_chunks` collection or its data. If your text index has a different name, inspect `db.repo_chunks.getIndexes()` and drop the existing text index by its actual name.
 
+
+
+## Render and Vercel CORS configuration
+
+Set `FRONTEND_ORIGIN` in Render to the exact Vercel origin, for example `https://evzax.vercel.app` (no backslashes, no trailing slash, and no `/workspace` path). Multiple origins may be comma separated, for example `https://evzax.vercel.app,http://localhost:5173`. Save the environment changes and redeploy/restart the Render service. For cookie authentication across Vercel and Render, set `AUTH_COOKIE_SECURE=true` and `AUTH_COOKIE_SAMESITE=none`; keep frontend requests configured with credentials.

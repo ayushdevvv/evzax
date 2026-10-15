@@ -52,8 +52,17 @@ def _github_headers() -> dict[str, str]:
 
 
 def parse_github_url(repo_url: str) -> tuple[str, str]:
-    parsed = urlparse(repo_url.strip())
-    if parsed.scheme != "https" or parsed.hostname not in {"github.com", "www.github.com"}:
+    # Accept a bare host/path as well as a full URL. Requests are rebuilt from
+    # validated owner/repository parts, so arbitrary hosts are never fetched.
+    raw = (repo_url or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Enter a public GitHub repository URL.")
+    if raw.startswith("//"):
+        raw = "https:" + raw
+    elif not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", raw):
+        raw = "https://" + raw
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"https", "http"} or parsed.hostname not in {"github.com", "www.github.com"}:
         raise HTTPException(status_code=400, detail="Enter a public GitHub repository URL.")
     segments = [part for part in parsed.path.strip("/").split("/") if part]
     if len(segments) < 2:
@@ -71,7 +80,24 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
     headers = _github_headers()
     try:
         with httpx.Client(timeout=httpx.Timeout(40.0, connect=15.0), follow_redirects=True) as client:
-            repo_response = client.get(base, headers=headers)
+            def get_with_retry(url: str, request_headers: dict[str, str] | None = None):
+                last_error = None
+                response = None
+                for attempt in range(4):
+                    try:
+                        response = client.get(url, headers=request_headers or headers)
+                        if response.status_code not in {429, 500, 502, 503, 504}:
+                            return response
+                    except httpx.HTTPError as exc:
+                        last_error = exc
+                    if attempt < 3:
+                        import time
+                        time.sleep(0.35 * (2 ** attempt))
+                if last_error:
+                    raise last_error
+                return response
+
+            repo_response = get_with_retry(base, headers)
             if repo_response.status_code == 404:
                 raise HTTPException(status_code=404, detail="Repository not found or not publicly accessible.")
             if repo_response.status_code == 403:
@@ -79,13 +105,13 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
             repo_response.raise_for_status()
             repo_info = repo_response.json()
             branch = ref or repo_info.get("default_branch") or "main"
-            commit_response = client.get(f"{base}/commits/{quote(branch, safe='')}", headers=headers)
+            commit_response = get_with_retry(f"{base}/commits/{quote(branch, safe='')}", headers)
             if commit_response.status_code == 404:
                 raise HTTPException(status_code=404, detail=f"Could not find branch or revision '{branch}'.")
             commit_response.raise_for_status()
             commit_info = commit_response.json()
             commit_sha = commit_info["sha"]
-            tree_response = client.get(f"{base}/git/trees/{commit_sha}?recursive=1", headers=headers)
+            tree_response = get_with_retry(f"{base}/git/trees/{commit_sha}?recursive=1", headers)
             tree_response.raise_for_status()
             tree = tree_response.json()
             if tree.get("truncated"):
@@ -100,9 +126,24 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
                     continue
                 if int(item.get("size", 0) or 0) > settings.max_file_bytes:
                     continue
-                candidates.append((path, item.get("size", 0)))
-                if len(candidates) >= settings.max_repository_files:
-                    break
+                candidates.append((path, int(item.get("size", 0) or 0)))
+
+            # Spend the indexing budget on useful application source first.
+            def candidate_score(candidate):
+                path, size = candidate
+                lower = path.lower()
+                score = 0
+                if any(part in lower.split("/") for part in ("src", "app", "lib", "packages", "backend", "frontend")):
+                    score += 30
+                if lower.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".cs", ".cpp", ".h", ".vue", ".svelte")):
+                    score += 20
+                if any(part in lower for part in ("test", "fixture", "mock", "example", "generated", "dist/", "build/")):
+                    score -= 15
+                score -= min(size / 100_000, 8)
+                return (-score, path)
+
+            candidates.sort(key=candidate_score)
+            candidates = candidates[:settings.max_repository_files]
 
             files: list[CodeFile] = []
             total_bytes = 0
@@ -110,11 +151,18 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
 
             def fetch_one(item):
                 path, _expected_size = item
-                try:
-                    response = client.get(f"{raw_base}/{quote(path, safe='/')}", headers={"User-Agent": "EVZAX-Codebase-Index"})
-                    return path, response.status_code, response.content if response.status_code == 200 else b""
-                except httpx.HTTPError:
-                    return path, 0, b""
+                raw_headers = {"User-Agent": "EVZAX-Codebase-Index"}
+                for attempt in range(3):
+                    try:
+                        response = client.get(f"{raw_base}/{quote(path, safe='/')}", headers=raw_headers)
+                        if response.status_code not in {429, 500, 502, 503, 504}:
+                            return path, response.status_code, response.content if response.status_code == 200 else b""
+                    except httpx.HTTPError:
+                        pass
+                    if attempt < 2:
+                        import time
+                        time.sleep(0.25 * (2 ** attempt))
+                return path, 0, b""
 
             # Fetch a small batch concurrently for large repositories without keeping the full tree in memory.
             with ThreadPoolExecutor(max_workers=12) as pool:
