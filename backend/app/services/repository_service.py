@@ -1,4 +1,5 @@
 import hashlib
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 import difflib
 import io
@@ -7,6 +8,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from threading import Lock
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from urllib.parse import quote, urlparse
@@ -76,20 +78,60 @@ def parse_github_url(repo_url: str) -> tuple[str, str]:
     return owner, repo
 
 
+BUSY_MESSAGE = "We're handling a lot of requests right now. Please try again in a few minutes."
+
+
+def _busy_error(retry_seconds: int | None = None) -> HTTPException:
+    """A professional, provider-neutral 'try again later' error (no vendor, quota or server wording)."""
+    message = BUSY_MESSAGE
+    if retry_seconds and 0 < retry_seconds < 24 * 3600:
+        minutes = max(1, round(retry_seconds / 60))
+        message = f"We're handling a lot of requests right now. Please try again in about {minutes} minute{'s' if minutes != 1 else ''}."
+    return HTTPException(status_code=429, detail=message)
+
+
+def _retry_seconds(response: httpx.Response) -> int | None:
+    try:
+        if response.headers.get("retry-after"):
+            return int(response.headers["retry-after"])
+        if response.headers.get("x-ratelimit-reset"):
+            return int(response.headers["x-ratelimit-reset"]) - int(time.time())
+    except ValueError:
+        pass
+    return None
+
+
+def _is_rate_limited(response: httpx.Response) -> bool:
+    return response.status_code == 429 or (response.status_code == 403 and response.headers.get("x-ratelimit-remaining") == "0")
+
+
 def _raise_for_github(response: httpx.Response) -> None:
-    """Translate GitHub failures into safe, specific API errors."""
-    if response.status_code == 429 or (response.status_code == 403 and response.headers.get("x-ratelimit-remaining") == "0"):
-        wait = ""
-        try:
-            minutes = max(1, round((int(response.headers.get("x-ratelimit-reset", "0")) - time.time()) / 60))
-            if minutes < 24 * 60:
-                wait = f" Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
-        except ValueError:
-            pass
-        raise HTTPException(status_code=429, detail="GitHub rate limit reached." + wait + (" Set GITHUB_TOKEN on the server for a much higher limit." if not settings.github_token else ""))
+    """Translate upstream failures into safe, specific API errors."""
+    if _is_rate_limited(response):
+        raise _busy_error(_retry_seconds(response))
     if response.status_code == 403:
-        raise HTTPException(status_code=403, detail="GitHub refused access to this repository.")
+        raise HTTPException(status_code=403, detail="This repository is not available for indexing.")
     response.raise_for_status()
+
+
+# Per-account ceiling on repository connects. It is deliberately high so normal use (dozens of
+# repositories in a session) never trips it; it only stops runaway loops or abuse.
+_connect_log: dict[str, deque] = defaultdict(deque)
+_connect_lock = Lock()
+
+
+def check_connect_budget(owner_id: str | None) -> None:
+    limit = settings.repo_connects_per_hour
+    if not owner_id or limit <= 0:
+        return
+    now = time.time()
+    with _connect_lock:
+        window = _connect_log[owner_id]
+        while window and now - window[0] > 3600:
+            window.popleft()
+        if len(window) >= limit:
+            raise _busy_error(int(3600 - (now - window[0])))
+        window.append(now)
 
 
 def _decode_source(path: str, raw: bytes) -> CodeFile | None:
@@ -99,31 +141,110 @@ def _decode_source(path: str, raw: bytes) -> CodeFile | None:
     return CodeFile(path=path, content=decoded, language=language_for_path(path)) if decoded.strip() else None
 
 
-def _read_archive(fileobj, candidates: list[tuple[str, int]]) -> list[CodeFile]:
-    """Read only the wanted paths from a GitHub archive. Nothing is extracted to disk."""
+def _archive_index(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
+    index = {}
+    for info in archive.infolist():
+        if info.is_dir():
+            continue
+        parts = info.filename.split("/", 1)  # first segment is the owner-repo-sha wrapper
+        if len(parts) == 2:
+            index[parts[1]] = info
+    return index
+
+
+def _read_members(archive: zipfile.ZipFile, index: dict, candidates: list[tuple[str, int]]) -> list[CodeFile]:
     files: list[CodeFile] = []
     total = 0
     budget = settings.max_repository_mb * 1024 * 1024
-    with zipfile.ZipFile(fileobj) as archive:
-        index = {}
-        for info in archive.infolist():
-            if info.is_dir():
-                continue
-            parts = info.filename.split("/", 1)  # first segment is the owner-repo-sha wrapper
-            if len(parts) == 2:
-                index[parts[1]] = info
-        for path, _size in candidates:
-            info = index.get(path)
-            if info is None or info.file_size > settings.max_file_bytes:
-                continue
-            raw = archive.read(info)
-            total += len(raw)
-            if total > budget:
-                break
-            code_file = _decode_source(path, raw)
-            if code_file:
-                files.append(code_file)
+    for path, _size in candidates:
+        info = index.get(path)
+        if info is None or info.file_size > settings.max_file_bytes:
+            continue
+        raw = archive.read(info)
+        total += len(raw)
+        if total > budget:
+            break
+        code_file = _decode_source(path, raw)
+        if code_file:
+            files.append(code_file)
     return files
+
+
+def _read_archive(fileobj, candidates: list[tuple[str, int]]) -> list[CodeFile]:
+    """Read only the wanted paths from a GitHub archive. Nothing is extracted to disk."""
+    with zipfile.ZipFile(fileobj) as archive:
+        return _read_members(archive, _archive_index(archive), candidates)
+
+
+def _candidate_score(candidate: tuple[str, int]):
+    """Spend the indexing budget on useful application source first."""
+    path, size = candidate
+    lower = path.lower()
+    score = 0
+    if any(part in lower.split("/") for part in ("src", "app", "lib", "packages", "backend", "frontend")):
+        score += 30
+    if lower.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".cs", ".cpp", ".h", ".vue", ".svelte")):
+        score += 20
+    if any(part in lower for part in ("test", "fixture", "mock", "example", "generated", "dist/", "build/")):
+        score -= 15
+    score -= min(size / 100_000, 8)
+    return (-score, path)
+
+
+_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _archive_commit_sha(archive: zipfile.ZipFile) -> str | None:
+    """GitHub archives are produced by `git archive`, which stores the commit id in the zip comment."""
+    comment = (archive.comment or b"").decode("ascii", errors="ignore").strip().lower()
+    if _SHA_RE.fullmatch(comment):
+        return comment
+    first = next((info.filename.split("/", 1)[0] for info in archive.infolist()), "")
+    match = re.search(r"-([0-9a-f]{40})$", first.lower())
+    return match.group(1) if match else None
+
+
+def _snapshot_from_public_archive(client: httpx.Client, owner: str, repo: str, ref: str | None) -> dict | None:
+    """Fetch a public repository straight from GitHub's archive host.
+
+    Archive downloads are not counted against the REST API quota, so indexing many repositories
+    does not exhaust it. Returns None when the caller should fall back to the API path, and raises
+    HTTPException(404) when the repository or revision does not exist publicly.
+    """
+    target = quote(ref, safe="/") if ref else "HEAD"
+    url = f"https://github.com/{owner}/{repo}/archive/{target}.zip"
+    limit = settings.max_archive_mb * 1024 * 1024
+    try:
+        with tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024) as buffer:
+            with client.stream("GET", url, headers={"User-Agent": "EVZAX-Codebase-Index"}, timeout=httpx.Timeout(120.0, connect=15.0)) as response:
+                if response.status_code == 404:
+                    return {"not_found": True}
+                if response.status_code != 200:
+                    return None
+                if int(response.headers.get("content-length") or 0) > limit:
+                    return None
+                size = 0
+                for part in response.iter_bytes(256 * 1024):
+                    size += len(part)
+                    if size > limit:
+                        return None
+                    buffer.write(part)
+            buffer.seek(0)
+            with zipfile.ZipFile(buffer) as archive:
+                index = _archive_index(archive)
+                candidates = []
+                for path, info in index.items():
+                    if should_skip_path(path) or info.file_size > settings.max_file_bytes:
+                        continue
+                    candidates.append((path, info.file_size))
+                candidates.sort(key=_candidate_score)
+                files = _read_members(archive, index, candidates[:settings.max_repository_files])
+                commit_sha = _archive_commit_sha(archive)
+            if not files:
+                return None
+            return {"files": files, "commit_sha": commit_sha}
+    except (httpx.HTTPError, zipfile.BadZipFile, OSError, ValueError):
+        return None
 
 
 def _files_from_archive(client: httpx.Client, base: str, commit_sha: str, headers: dict[str, str], candidates: list[tuple[str, int]]) -> list[CodeFile] | None:
@@ -187,6 +308,23 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
     headers = _github_headers()
     try:
         with httpx.Client(timeout=httpx.Timeout(40.0, connect=15.0), follow_redirects=True) as client:
+            # Fast path: one archive download, no REST API calls, so bulk indexing is not rate limited.
+            fast = _snapshot_from_public_archive(client, owner, repo_name, ref)
+            if fast and fast.get("files"):
+                sha = fast.get("commit_sha")
+                return {
+                    "name": safe_repo_name(repo_name),
+                    "source_type": "github",
+                    "source_url": f"https://github.com/{owner}/{repo_name}",
+                    "default_branch": ref,
+                    "commit_sha": sha,
+                    "revision_label": sha[:10] if sha else (ref or "latest"),
+                    "files": fast["files"],
+                }
+            if fast and fast.get("not_found") and not settings.github_token:
+                raise HTTPException(status_code=404, detail="Repository not found or not publicly accessible.")
+
+            # Fallback (very large repositories, or private ones when a token is configured).
             def get_with_retry(url: str, request_headers: dict[str, str] | None = None):
                 last_error = None
                 response = None
@@ -232,21 +370,7 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
                     continue
                 candidates.append((path, int(item.get("size", 0) or 0)))
 
-            # Spend the indexing budget on useful application source first.
-            def candidate_score(candidate):
-                path, size = candidate
-                lower = path.lower()
-                score = 0
-                if any(part in lower.split("/") for part in ("src", "app", "lib", "packages", "backend", "frontend")):
-                    score += 30
-                if lower.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php", ".cs", ".cpp", ".h", ".vue", ".svelte")):
-                    score += 20
-                if any(part in lower for part in ("test", "fixture", "mock", "example", "generated", "dist/", "build/")):
-                    score -= 15
-                score -= min(size / 100_000, 8)
-                return (-score, path)
-
-            candidates.sort(key=candidate_score)
+            candidates.sort(key=_candidate_score)
             candidates = candidates[:settings.max_repository_files]
 
             files = _files_from_archive(client, base, commit_sha, headers, candidates)
@@ -255,7 +379,7 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
     except HTTPException:
         raise
     except (httpx.HTTPError, KeyError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail="GitHub could not be read right now. Please try again shortly.") from exc
+        raise HTTPException(status_code=502, detail="We could not fetch this repository right now. Please try again shortly.") from exc
 
     if not files:
         raise HTTPException(status_code=422, detail="No supported source files were found. Check the repository language and exclusions.")

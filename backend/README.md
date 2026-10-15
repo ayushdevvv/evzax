@@ -65,4 +65,4 @@ Set `FRONTEND_ORIGIN` in Render to the exact Vercel origin, for example `https:/
 
 ### GitHub repository indexing limits
 
-Defaults: `MAX_REPOSITORY_FILES=2500`, `MAX_FILE_BYTES=750000`, `MAX_UPLOAD_MB=60`, and `MAX_CODE_CHUNKS=5000`. Override these environment variables on Render. If indexing is killed due to memory pressure, lower the file/chunk caps before increasing the instance size. Add `GITHUB_TOKEN` for higher GitHub API rate limits. Repository inputs may be entered as `github.com/owner/repo` or a full HTTPS URL.
+Defaults: `MAX_REPOSITORY_FILES=2500`, `MAX_FILE_BYTES=750000`, `MAX_UPLOAD_MB=60`, and `MAX_CODE_CHUNKS=5000`. Override these environment variables on Render. If indexing is killed due to memory pressure, lower the file/chunk caps before increasing the instance size. `GITHUB_TOKEN` is optional: repositories are fetched from archives, which do not use the API quota. Repository inputs may be entered as `github.com/owner/repo` or a full HTTPS URL.

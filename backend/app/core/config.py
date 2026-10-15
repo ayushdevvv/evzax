@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     max_repository_mb: int = 100        # total source text accepted from one GitHub repository
     max_archive_mb: int = 250           # largest GitHub archive downloaded in one request
     github_fetch_workers: int = 24      # parallel per-file fallback fetches
+    # Per-account repository connects per hour. High on purpose: it only stops runaway use.
+    repo_connects_per_hour: int = 300
     max_document_mb: int = 20
     max_document_pages: int = 300
     max_document_chunks: int = 1200

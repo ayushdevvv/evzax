@@ -81,3 +81,13 @@ Fetch capacity
 Not verified here
 - Backend dependencies and `npm ci` were unavailable in the sandbox. Only the archive reader and client-IP logic were exercised in isolation; the new pytest files and the Vite build need a run on your machine.
 - Signup has no rate limit yet. Safari and some browsers block third-party cookies between vercel.app and onrender.com; a custom domain for both (or proxying /api through the frontend host) is the durable fix.
+
+
+## Rate-limit, client messaging and phone loader pass
+
+- GitHub repositories are now fetched from the public archive host (`github.com/<owner>/<repo>/archive/<ref>.zip`) in one download. This does not use the REST API quota, so indexing 50+ repositories in an hour no longer hits the unauthenticated 60 requests/hour cap (previously ~4 API calls per repository, about 15 repositories per hour). The commit id is read from the archive's zip comment.
+- The REST API path remains only as a fallback (archives over `MAX_ARCHIVE_MB`, or private repositories when `GITHUB_TOKEN` is set).
+- A per-account ceiling remains for runaway use: `REPO_CONNECTS_PER_HOUR` (default 300, `0` disables). It is in-memory per process.
+- Limit errors are provider-neutral: "We're handling a lot of requests right now. Please try again in about N minutes." The client also masks any 4xx detail containing words like rate limit, token, server or GITHUB_, and 429 toasts are titled "Please try again shortly".
+- On phones (<=640px) the indexing overlay is compact: smaller animation, hidden log pane, tighter spacing.
+- Tests added for zip-comment commit id, neutral error text and the connect ceiling. Not run with pytest here (no packages available); the logic was verified with a stubbed harness. Run `pytest` and `npm run build` locally.

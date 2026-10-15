@@ -27,3 +27,36 @@ def test_respects_per_file_and_total_budget(monkeypatch):
     buffer.seek(0)
     monkeypatch.setattr(settings, "max_repository_mb", 0)
     assert _read_archive(buffer, [("ok.py", 6)]) == []
+
+
+def test_commit_sha_read_from_zip_comment():
+    from app.services.repository_service import _archive_commit_sha
+    sha = "a" * 40
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("owner-repo-HEAD/a.py", "x = 1\n")
+        archive.comment = sha.encode()
+    buffer.seek(0)
+    with zipfile.ZipFile(buffer) as archive:
+        assert _archive_commit_sha(archive) == sha
+
+
+def test_rate_limit_message_is_provider_neutral():
+    from app.services.repository_service import _busy_error
+    detail = _busy_error(600).detail.lower()
+    assert "about 10 minutes" in detail
+    assert not any(word in detail for word in ("github", "token", "server", "rate limit"))
+
+
+def test_connect_budget_blocks_only_at_high_volume(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app.services import repository_service as rs
+    monkeypatch.setattr(rs.settings, "repo_connects_per_hour", 60)
+    rs._connect_log.clear()
+    for _ in range(60):
+        rs.check_connect_budget("user-1")
+    with pytest.raises(HTTPException) as caught:
+        rs.check_connect_budget("user-1")
+    assert caught.value.status_code == 429
+    rs.check_connect_budget("user-2")

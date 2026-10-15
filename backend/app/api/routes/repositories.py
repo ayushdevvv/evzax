@@ -16,6 +16,7 @@ from app.services.documents_service import (
 )
 from app.services.repository_service import (
     activate_version,
+    check_connect_budget,
     compare_versions,
     fetch_github_snapshot,
     get_repository,
@@ -58,6 +59,7 @@ def repositories_list(user: dict = Depends(current_user)):
 def connect_github(payload: GitHubConnectRequest, user: dict = Depends(current_user)):
     if payload.existing_repo_id:
         _require_owner(payload.existing_repo_id, user)
+    check_connect_budget(user["id"])
     return _database_guard(index_snapshot, fetch_github_snapshot(payload.repo_url, payload.ref), payload.existing_repo_id, user["id"])
 
 

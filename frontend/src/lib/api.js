@@ -7,16 +7,19 @@ function fallbackMessage(status) {
   if (status === 404) return 'We could not find that item. Refresh and try again.'
   if (status === 409) return 'This change conflicts with the current state. Refresh and try again.'
   if (status === 413) return 'This file is too large. Choose a smaller file.'
-  if (status === 429) return 'You are doing that too often. Wait a moment and try again.'
+  if (status === 429) return 'We are handling a lot of requests right now. Please try again in a few minutes.'
   if (status >= 500) return 'Something went wrong on our side. Please try again shortly.'
   return 'The request could not be completed. Please try again.'
 }
 
 // 4xx details are written for users by the backend ("Email or password is incorrect.").
 // Show them when they are short plain strings; 5xx and anything unexpected stay generic.
+// Infrastructure wording (providers, quotas, keys, servers) never reaches people; they get a plain message instead.
+const TECHNICAL = /rate.?limit|quota|throttl|token|api key|github_|\bserver\b|\bbackend\b|x-ratelimit|http|exception|traceback/i
+
 function safeMessage(status, detail, path) {
   if (status === 401 && !path.startsWith('/auth/')) return 'Your session expired. Please sign in again.'
-  if (status >= 400 && status < 500 && typeof detail === 'string' && detail.length > 0 && detail.length <= 220) return detail
+  if (status >= 400 && status < 500 && typeof detail === 'string' && detail.length > 0 && detail.length <= 220 && !TECHNICAL.test(detail)) return detail
   return fallbackMessage(status)
 }
 
@@ -43,7 +46,7 @@ async function request(path, options = {}) {
     if (response.status === 401 && !path.startsWith('/auth/')) {
       window.dispatchEvent(new CustomEvent('evzax:unauthorized'))
     } else if (!silent) {
-      emitToast({ type: 'error', title: response.status >= 500 ? 'Service temporarily unavailable' : 'Could not complete that', message })
+      emitToast({ type: 'error', title: response.status === 429 ? 'Please try again shortly' : response.status >= 500 ? 'Service temporarily unavailable' : 'Could not complete that', message })
     }
     throw error
   }
