@@ -56,8 +56,6 @@ def _github_headers() -> dict[str, str]:
 
 
 def parse_github_url(repo_url: str) -> tuple[str, str]:
-    # Accept a bare host/path as well as a full URL. Requests are rebuilt from
-    # validated owner/repository parts, so arbitrary hosts are never fetched.
     raw = (repo_url or "").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="Enter a public GitHub repository URL.")
@@ -82,7 +80,6 @@ BUSY_MESSAGE = "We're handling a lot of requests right now. Please try again in 
 
 
 def _busy_error(retry_seconds: int | None = None) -> HTTPException:
-    """A professional, provider-neutral 'try again later' error (no vendor, quota or server wording)."""
     message = BUSY_MESSAGE
     if retry_seconds and 0 < retry_seconds < 24 * 3600:
         minutes = max(1, round(retry_seconds / 60))
@@ -106,7 +103,6 @@ def _is_rate_limited(response: httpx.Response) -> bool:
 
 
 def _raise_for_github(response: httpx.Response) -> None:
-    """Translate upstream failures into safe, specific API errors."""
     if _is_rate_limited(response):
         raise _busy_error(_retry_seconds(response))
     if response.status_code == 403:
@@ -114,8 +110,6 @@ def _raise_for_github(response: httpx.Response) -> None:
     response.raise_for_status()
 
 
-# Per-account ceiling on repository connects. It is deliberately high so normal use (dozens of
-# repositories in a session) never trips it; it only stops runaway loops or abuse.
 _connect_log: dict[str, deque] = defaultdict(deque)
 _connect_lock = Lock()
 
@@ -146,7 +140,7 @@ def _archive_index(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     for info in archive.infolist():
         if info.is_dir():
             continue
-        parts = info.filename.split("/", 1)  # first segment is the owner-repo-sha wrapper
+        parts = info.filename.split("/", 1)
         if len(parts) == 2:
             index[parts[1]] = info
     return index
@@ -171,13 +165,11 @@ def _read_members(archive: zipfile.ZipFile, index: dict, candidates: list[tuple[
 
 
 def _read_archive(fileobj, candidates: list[tuple[str, int]]) -> list[CodeFile]:
-    """Read only the wanted paths from a GitHub archive. Nothing is extracted to disk."""
     with zipfile.ZipFile(fileobj) as archive:
         return _read_members(archive, _archive_index(archive), candidates)
 
 
 def _candidate_score(candidate: tuple[str, int]):
-    """Spend the indexing budget on useful application source first."""
     path, size = candidate
     lower = path.lower()
     score = 0
@@ -195,7 +187,6 @@ _SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _archive_commit_sha(archive: zipfile.ZipFile) -> str | None:
-    """GitHub archives are produced by `git archive`, which stores the commit id in the zip comment."""
     comment = (archive.comment or b"").decode("ascii", errors="ignore").strip().lower()
     if _SHA_RE.fullmatch(comment):
         return comment
@@ -205,12 +196,6 @@ def _archive_commit_sha(archive: zipfile.ZipFile) -> str | None:
 
 
 def _snapshot_from_public_archive(client: httpx.Client, owner: str, repo: str, ref: str | None) -> dict | None:
-    """Fetch a public repository straight from GitHub's archive host.
-
-    Archive downloads are not counted against the REST API quota, so indexing many repositories
-    does not exhaust it. Returns None when the caller should fall back to the API path, and raises
-    HTTPException(404) when the repository or revision does not exist publicly.
-    """
     target = quote(ref, safe="/") if ref else "HEAD"
     url = f"https://github.com/{owner}/{repo}/archive/{target}.zip"
     limit = settings.max_archive_mb * 1024 * 1024
@@ -248,8 +233,6 @@ def _snapshot_from_public_archive(client: httpx.Client, owner: str, repo: str, r
 
 
 def _files_from_archive(client: httpx.Client, base: str, commit_sha: str, headers: dict[str, str], candidates: list[tuple[str, int]]) -> list[CodeFile] | None:
-    """One archive download instead of one request per file: faster, and it spends a single
-    API call of the rate limit. Returns None so the caller can fall back to per-file fetching."""
     limit = settings.max_archive_mb * 1024 * 1024
     try:
         with tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024) as buffer:
@@ -271,7 +254,6 @@ def _files_from_archive(client: httpx.Client, base: str, commit_sha: str, header
 
 
 def _files_from_raw(client: httpx.Client, raw_base: str, candidates: list[tuple[str, int]]) -> list[CodeFile]:
-    """Fallback for repositories too large for the archive path: bounded parallel raw fetches."""
     files: list[CodeFile] = []
     total = 0
     budget = settings.max_repository_mb * 1024 * 1024
@@ -308,7 +290,6 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
     headers = _github_headers()
     try:
         with httpx.Client(timeout=httpx.Timeout(40.0, connect=15.0), follow_redirects=True) as client:
-            # Fast path: one archive download, no REST API calls, so bulk indexing is not rate limited.
             fast = _snapshot_from_public_archive(client, owner, repo_name, ref)
             if fast and fast.get("files"):
                 sha = fast.get("commit_sha")
@@ -324,7 +305,6 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
             if fast and fast.get("not_found") and not settings.github_token:
                 raise HTTPException(status_code=404, detail="Repository not found or not publicly accessible.")
 
-            # Fallback (very large repositories, or private ones when a token is configured).
             def get_with_retry(url: str, request_headers: dict[str, str] | None = None):
                 last_error = None
                 response = None
@@ -418,7 +398,6 @@ async def read_zip_snapshot(upload: UploadFile, display_name: str | None = None)
                 if path.is_absolute() or ".." in path.parts or not path.parts:
                     continue
                 normalized = str(path)
-                # Many source archives contain one wrapping root directory. Strip it only when it is uniform.
                 if len(path.parts) > 1 and path.parts[0].endswith("-main") and path.parts[0].lower() not in {"src-main"}:
                     normalized = "/".join(path.parts[1:])
                 elif len(path.parts) > 1 and path.parts[0].endswith("-master"):
@@ -468,7 +447,6 @@ async def read_zip_snapshot(upload: UploadFile, display_name: str | None = None)
 def _serialize_repo(document: dict) -> dict:
     data = dict(document)
     data["id"] = str(data.pop("_id", data.get("id", "")))
-    # The full path hash manifest is retained for server side diffs, not sent to the browser.
     data.pop("file_hashes", None)
     data.pop("error", None)
     data.pop("owner_id", None)
@@ -603,7 +581,6 @@ def index_snapshot(snapshot: dict, existing_repo_id: str | None = None, owner_id
         symbol_count += len(symbols)
         parsed_chunks = chunk_code(code_file.path, code_file.content)
         for index, chunk in enumerate(parsed_chunks):
-            # For Python chunks, prefer the innermost AST symbol that overlaps the chunk.
             if symbols:
                 matching = [symbol for symbol in symbols if symbol["line_start"] <= chunk.line_end and symbol["line_end"] >= chunk.line_start]
                 if matching:

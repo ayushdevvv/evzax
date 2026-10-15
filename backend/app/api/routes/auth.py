@@ -34,7 +34,6 @@ def _set_session_cookie(response: Response, token: str, max_age: int) -> None:
 
 
 def _no_store(response: Response) -> None:
-    # Session state must never be served from a browser or CDN cache.
     response.headers["Cache-Control"] = "no-store"
     response.headers["Vary"] = "Cookie"
 
@@ -81,8 +80,6 @@ def login(payload: LoginPayload, request: Request, response: Response):
 
 @router.post("/logout")
 def logout(request: Request, response: Response):
-    # Idempotent on purpose: signing out with an expired or already-revoked session must
-    # still clear the cookie and succeed, otherwise the UI is stuck "signed in".
     _no_store(response)
     revoke_session(request.cookies.get(settings.auth_cookie_name))
     response.delete_cookie(

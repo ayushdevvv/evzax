@@ -137,7 +137,6 @@ def chunk_code(file_path: str, content: str, max_lines: int = 88, overlap: int =
 
 
 def parse_python_symbols(file_path: str, content: str) -> list[dict]:
-    """Optional AST metadata for Python files. Fail closed to generic chunks when syntax is incomplete."""
     try:
         tree = ast.parse(content)
     except (SyntaxError, ValueError):

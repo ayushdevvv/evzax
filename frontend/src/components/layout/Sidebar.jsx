@@ -23,7 +23,7 @@ export default function Sidebar(props) {
   const location = useLocation()
   const match = location.pathname.match(/^\/repositories\/([^/]+)/)
   const activeRepo = repositories.find(function (repo) { return match && repo.id === match[1] }) || repositories[0]
-  const repoBase = activeRepo ? '/repositories/' + activeRepo.id : '/connect' 
+  const repoBase = activeRepo ? '/repositories/' + activeRepo.id : '/connect'
 
   function renderRepo(repo) {
     return <RepoLink key={repo.id} repo={repo} />

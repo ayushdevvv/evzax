@@ -3,7 +3,7 @@ import { api } from './api'
 import { notify } from './ToastContext'
 
 const AuthContext = createContext(null)
-const BOOT_RETRY_DELAYS = [1500, 3000, 6000]   // free-tier hosts can take a while to wake up
+const BOOT_RETRY_DELAYS = [1500, 3000, 6000]
 const FOCUS_RECHECK_MS = 60_000
 
 const transient = (err) => !err.status || err.status >= 500
@@ -11,9 +11,8 @@ const transient = (err) => !err.status || err.status >= 500
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [waking, setWaking] = useState(false)          // first check failed, retrying
-  const [unavailable, setUnavailable] = useState(false) // server unreachable, session state unknown
-  // Every sign in/out/expiry bumps the epoch. A slower, older /auth/me answer must not overwrite it.
+  const [waking, setWaking] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
   const epoch = useRef(0)
   const lastCheck = useRef(0)
   const userRef = useRef(null)
@@ -39,7 +38,6 @@ export function AuthProvider({ children }) {
           if (mine !== epoch.current) return
           continue
         }
-        // Unknown, not "logged out": keep whoever is signed in rather than bouncing them to /login.
         setUnavailable(true)
         break
       }
@@ -49,7 +47,6 @@ export function AuthProvider({ children }) {
 
   useEffect(() => { refresh({ boot: true }) }, [refresh])
 
-  // Any API call that comes back 401 means the session is gone (expired, revoked, signed out elsewhere).
   useEffect(() => {
     const onUnauthorized = () => {
       if (!userRef.current) return
@@ -61,7 +58,6 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('evzax:unauthorized', onUnauthorized)
   }, [])
 
-  // Pick up sign-outs and sign-ins made in another tab when this one regains focus.
   useEffect(() => {
     const recheck = () => {
       if (document.visibilityState === 'hidden') return
@@ -83,10 +79,9 @@ export function AuthProvider({ children }) {
   const signUp = useCallback(async (name, email, password) => adopt((await api.signUp(name, email, password)).user), [adopt])
   const signIn = useCallback(async (email, password) => adopt((await api.signIn(email, password)).user), [adopt])
   const signOut = useCallback(async () => {
-    // Clear local state first and always: a failed network call must not leave the UI signed in.
     epoch.current += 1
     setUser(null)
-    try { await api.signOut() } catch { /* cookie expires on its own; server logout is idempotent */ }
+    try { await api.signOut() } catch { }
   }, [])
 
   return <AuthContext.Provider value={{ user, loading, waking, unavailable, signUp, signIn, signOut, refresh }}>{children}</AuthContext.Provider>

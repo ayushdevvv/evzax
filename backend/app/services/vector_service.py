@@ -35,9 +35,6 @@ def _ensure_mongo_indexes() -> None:
     chunks = get_db().repo_chunks
     chunks.create_index([("repo_id", ASCENDING), ("version_id", ASCENDING), ("source_kind", ASCENDING)])
     chunks.create_index([("repo_id", ASCENDING), ("source_kind", ASCENDING)])
-    # Migrate the earlier index definition if it used the `language` metadata field
-    # as MongoDB's language override. Values such as "javascript" are not valid
-    # MongoDB text-search languages and cause every upsert/search to fail.
     try:
         for index_name, index_info in chunks.index_information().items():
             keys = index_info.get("key", [])
@@ -45,7 +42,6 @@ def _ensure_mongo_indexes() -> None:
             if is_text_index and index_info.get("language_override", "language") != "textSearchLanguage":
                 chunks.drop_index(index_name)
     except OperationFailure:
-        # A concurrent worker may be creating or dropping the same index.
         pass
     try:
         chunks.create_index(
@@ -53,12 +49,9 @@ def _ensure_mongo_indexes() -> None:
             name="gitcontext_chunks_text",
             weights={"content": 5, "symbol": 6, "file_path": 4, "document_name": 3},
             default_language="english",
-            # `language` is our programming-language metadata (e.g. javascript, python).
-            # Never use it as MongoDB's text-index language override field.
             language_override="textSearchLanguage",
         )
     except OperationFailure as exc:
-        # MongoDB permits only one text index per collection. Existing compatible indexes remain usable.
         if "text index" not in str(exc).lower() and "index already exists" not in str(exc).lower():
             raise
 
@@ -95,7 +88,6 @@ def upsert_chunks(repo_id: str, version_id: str, chunks: list[dict], vectors: li
                 "page_number": int(chunk.get("page_number", 0) or 0),
                 "indexed_revision_number": int(chunk.get("indexed_revision_number", 0) or 0),
             }
-            # Pinecone metadata is deliberately scalar only.
             records.append({"id": chunk["vector_id"], "values": vector, "metadata": metadata})
             mongo_records.append({
                 "_id": chunk["vector_id"],
@@ -173,7 +165,6 @@ def _keyword_query(repo_id: str, query: str, source_kind: str, version_id: str |
         if output:
             return output
     except Exception:
-        # Keyword search still has a bounded fallback if a deployment has not created the text index yet.
         pass
 
     regex_terms = [re.compile(re.escape(term), re.IGNORECASE) for term in terms if len(term) >= 3]

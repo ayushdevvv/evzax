@@ -20,7 +20,7 @@ export default function AppShell() {
     let active = true
     api.repositories()
       .then(function (data) { if (active) setRepositories(data.repositories || []) })
-      .catch(function () { /* keep the last good list; a blip must not empty the sidebar */ })
+      .catch(function () { })
     return function () { active = false }
   }, [location.pathname, auth.user && auth.user.id])
 

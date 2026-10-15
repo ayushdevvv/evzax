@@ -82,7 +82,6 @@ export default function RepositoryPage() {
   useEffect(function () {
     setSelectedVersionId('')
     loadAll('')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repositoryId])
 
   useEffect(function () {
@@ -96,7 +95,6 @@ export default function RepositoryPage() {
       setSearchParams({}, { replace: true })
       window.setTimeout(function () { if (textareaRef.current) textareaRef.current.focus() }, 60)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(function () {

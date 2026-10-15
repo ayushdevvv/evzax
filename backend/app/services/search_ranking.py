@@ -11,7 +11,6 @@ def _canonical_key(hit: dict) -> str:
 
 
 def reciprocal_rank_fusion(vector_hits: list[dict], keyword_hits: list[dict], top_k: int) -> list[dict]:
-    """Fuse semantic and lexical rankings using RRF without comparing unlike provider scores."""
     combined: dict[str, dict] = {}
     for method, hits in (("semantic", vector_hits), ("keyword", keyword_hits)):
         for rank, hit in enumerate(hits, start=1):

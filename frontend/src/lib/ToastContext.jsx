@@ -15,7 +15,6 @@ export function ToastProvider({ children }) {
   }, [])
   const recent = useRef(new Map())
   const toast = useCallback((message, type = 'success', title) => {
-    // Several requests failing together (or a retry loop) must not stack identical toasts.
     const key = `${type}|${title || ''}|${message}`
     const now = Date.now()
     if (now - (recent.current.get(key) || 0) < 3000) return null

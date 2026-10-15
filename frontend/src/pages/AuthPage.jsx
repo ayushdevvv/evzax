@@ -18,7 +18,6 @@ export default function AuthPage(props) {
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  // Only same-site paths: never follow a protocol-relative or absolute URL from router state.
   const from = location.state && location.state.from
   const target = typeof from === 'string' && /^\/(?!\/)/.test(from) && !/^\/(login|signup)/.test(from) ? from : '/workspace'
 

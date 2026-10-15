@@ -12,9 +12,6 @@ function fallbackMessage(status) {
   return 'The request could not be completed. Please try again.'
 }
 
-// 4xx details are written for users by the backend ("Email or password is incorrect.").
-// Show them when they are short plain strings; 5xx and anything unexpected stay generic.
-// Infrastructure wording (providers, quotas, keys, servers) never reaches people; they get a plain message instead.
 const TECHNICAL = /rate.?limit|quota|throttl|token|api key|github_|\bserver\b|\bbackend\b|x-ratelimit|http|exception|traceback/i
 
 function safeMessage(status, detail, path) {
@@ -25,7 +22,6 @@ function safeMessage(status, detail, path) {
 
 function emitToast(detail) { window.dispatchEvent(new CustomEvent('evzax:toast', { detail })) }
 
-// silent: the caller shows its own state (auth form, health dot), so no toast.
 async function request(path, options = {}) {
   const { silent = false, ...init } = options
   let response
@@ -42,7 +38,6 @@ async function request(path, options = {}) {
     const message = safeMessage(response.status, body && body.detail, path)
     const error = new Error(message)
     error.status = response.status
-    // A 401 outside /auth means the session ended: tell AuthContext so the UI leaves stale signed-in state.
     if (response.status === 401 && !path.startsWith('/auth/')) {
       window.dispatchEvent(new CustomEvent('evzax:unauthorized'))
     } else if (!silent) {

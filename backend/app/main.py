@@ -50,7 +50,6 @@ async def clean_http_errors(_, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def clean_validation_errors(_, exc: RequestValidationError):
-    # The default body echoes submitted values (including passwords) back in "input".
     return JSONResponse(status_code=422, content={"detail": "Please check the information and try again."})
 
 
@@ -61,6 +60,5 @@ def root():
 
 @app.exception_handler(Exception)
 async def clean_unexpected_errors(_, exc: Exception):
-    # Full exception details stay in server logs only. Never send SDK, database, or path details to clients.
     logger.exception("Unhandled request error", exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again shortly."})

@@ -1,8 +1,3 @@
-"""Cookie based authentication helpers for EVZAX.
-
-JWTs are signed with HS256 and backed by revocable MongoDB sessions.
-No bearer token or password hash is returned to the browser.
-"""
 from __future__ import annotations
 
 import base64
@@ -48,8 +43,6 @@ def _secret() -> bytes:
 
 @lru_cache(maxsize=1)
 def _ensure_indexes_marker() -> bool:
-    # This local cache avoids repeating index creation in one worker. MongoDB
-    # remains the source of truth and creates these indexes idempotently.
     db = get_db()
     db.users.create_index([("email", ASCENDING)], unique=True, name="users_email_unique")
     db.auth_sessions.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0, name="auth_sessions_expiry_ttl")
@@ -67,8 +60,6 @@ def validate_email(value: str) -> str:
 
 def _hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
     salt = salt or secrets.token_bytes(16)
-    # scrypt is CPU and memory hard. Explicit maxmem gives OpenSSL enough room
-    # on Windows while retaining conservative settings for a small SaaS app.
     digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
     return _b64url(salt), _b64url(digest)
 
@@ -129,9 +120,6 @@ def _digest(value: str) -> str:
 
 
 def _request_ip(request: Request) -> str:
-    # Behind Render/another proxy request.client is the proxy for every user, which makes
-    # the throttle global per email. With AUTH_TRUST_PROXY the last forwarded hop (the one
-    # appended by our own proxy, not by the client) is used instead.
     if settings.auth_trust_proxy:
         forwarded = request.headers.get("x-forwarded-for", "")
         hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
@@ -158,10 +146,9 @@ def _clear_failed_logins(email: str, request: Request) -> None:
     try:
         get_db().auth_attempts.delete_many({"email_hash": _digest(email), "ip_hash": _digest(_request_ip(request))})
     except PyMongoError:
-        return  # Best effort. Entries expire on their own.
+        return
 
 
-# Constant-cost decoy so unknown emails take as long to reject as wrong passwords.
 _DECOY_SALT = b"evzax-decoy-salt!"
 
 
@@ -280,6 +267,4 @@ def revoke_session(token: str | None) -> None:
         try:
             get_db().auth_sessions.update_one({"_id": payload["jti"], "user_id": payload["sub"]}, {"$set": {"revoked": True, "revoked_at": datetime.now(timezone.utc)}})
         except PyMongoError:
-            # The cookie is still cleared. A DB outage can delay server-side revocation
-            # until expiry; do not leak the database message to the client.
             return

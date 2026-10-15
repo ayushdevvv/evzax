@@ -66,7 +66,6 @@ def _extract(content: bytes, filename: str) -> tuple[list[dict], str]:
             pages.append({"page_number": 0, "text": text})
     if not pages:
         raise HTTPException(status_code=422, detail="No readable text was found. Scanned PDFs need OCR, which is not enabled in this version.")
-    # Redact likely credentials before content enters storage, embeddings, or the language model.
     for page in pages:
         page["text"] = redact_secret_lines(page["text"])
     return pages, extension

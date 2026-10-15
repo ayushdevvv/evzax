@@ -33,7 +33,6 @@ router = APIRouter(prefix="/repositories", tags=["repositories"], dependencies=[
 def _require_owner(repo_id: str, user: dict) -> None:
     repo = get_db().repositories.find_one({"_id": repo_id}, {"owner_id": 1})
     if not repo or repo.get("owner_id") != user.get("id"):
-        # Do not disclose whether another user's repository exists.
         raise HTTPException(status_code=404, detail="Repository was not found.")
 
 
