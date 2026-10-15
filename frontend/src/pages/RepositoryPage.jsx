@@ -8,6 +8,7 @@ import Brand, { LogoMark } from '../components/Brand'
 import CodeViewer from '../components/repository/CodeViewer'
 import AnalysisState from '../components/repository/AnalysisState'
 import CommandPalette from '../components/CommandPalette'
+import { notify } from '../lib/ToastContext'
 
 function historyToMessages(history) {
   const list = history || []
@@ -126,6 +127,7 @@ export default function RepositoryPage() {
       const answer = await api.chat(repositoryId, text, selectedVersionId)
       const reply = Object.assign({}, answer, { id: answer.message_id, answer: answer.answer, created_at: new Date().toISOString() })
       setMessages(function (current) { return current.concat([reply]) })
+      notify('Answer ready with source references.', 'success', 'Answer generated')
     } catch (err) {
       setError(err.message || 'Could not get an answer.')
     } finally {
@@ -155,7 +157,8 @@ export default function RepositoryPage() {
     try {
       const result = await api.sync(repositoryId)
       await loadAll(result.version ? result.version.id : selectedVersionId)
-      if (result.unchanged) setError('Already up to date. No new commit was found.')
+      if (result.unchanged) notify('No new commit was found. You are up to date.', 'info', 'Already current')
+      else notify('The latest revision is indexed and ready.', 'success', 'Revision updated')
     } catch (err) {
       setError(err.message || 'Could not sync this repository.')
     } finally {

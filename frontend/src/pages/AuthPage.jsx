@@ -3,10 +3,12 @@ import { Eye, EyeOff, LoaderCircle, Lock, Mail, User } from 'lucide-react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import Brand from '../components/Brand'
 import { useAuth } from '../lib/AuthContext'
+import { useToast } from '../lib/ToastContext'
 
 export default function AuthPage(props) {
   const signup = props.mode === 'signup'
   const auth = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const [name, setName] = useState('')
@@ -17,6 +19,7 @@ export default function AuthPage(props) {
   const [error, setError] = useState('')
   const target = (location.state && location.state.from) || '/workspace'
 
+  if (auth.loading) return <main className="route-loading"><span className="loading-orbit" /><p>Restoring your workspace</p></main>
   if (auth.user) return <Navigate to={target} replace />
 
   function handleName(event) { setName(event.target.value) }
@@ -34,9 +37,10 @@ export default function AuthPage(props) {
     try {
       if (signup) await auth.signUp(name, email, password)
       else await auth.signIn(email, password)
+      toast(signup ? 'Your workspace is ready.' : 'Welcome back to EVZAX.', 'success', signup ? 'Account created' : 'Signed in')
       navigate(target, { replace: true })
     } catch (err) {
-      setError(err.message || 'Something went wrong.')
+      setError(err.message || 'Could not sign in. Please try again.')
       setBusy(false)
     }
   }

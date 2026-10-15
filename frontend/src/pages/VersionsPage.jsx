@@ -6,6 +6,7 @@ import { formatDate } from '../lib/format'
 import ConnectPanel from '../components/ConnectPanel'
 import RepoNav from '../components/repository/RepoNav'
 import VersionEntry from '../components/repository/VersionEntry'
+import { notify } from '../lib/ToastContext'
 
 export default function VersionsPage() {
   const { repositoryId } = useParams()
@@ -46,6 +47,7 @@ export default function VersionsPage() {
       const result = await api.sync(repositoryId)
       await load()
       setNotice(result.unchanged ? 'Already current.' : 'New revision indexed. The previous one is kept.')
+      notify(result.unchanged ? 'This repository is already up to date.' : 'New revision indexed. Previous versions remain available.', result.unchanged ? 'info' : 'success', result.unchanged ? 'Already current' : 'Revision saved')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -60,6 +62,7 @@ export default function VersionsPage() {
       setRepository(result)
       await load()
       setNotice('Active revision changed.')
+      notify('Retrieval now uses the selected revision.', 'success', 'Active version changed')
     } catch (err) {
       setError(err.message)
     }
@@ -76,6 +79,7 @@ export default function VersionsPage() {
     setComparing(true); setError(''); setCompareResult(null)
     try {
       setCompareResult(await api.compareVersions(repositoryId, compareFrom, compareTo))
+      notify('Revision comparison is ready.', 'success', 'Comparison complete')
     } catch (err) {
       setError(err.message || 'Could not compare revisions.')
     } finally {

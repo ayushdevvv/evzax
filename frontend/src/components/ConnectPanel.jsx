@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Check, CloudUpload, FileArchive, Github, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { notify } from '../lib/ToastContext'
 import LoadingState from './LoadingState'
 
 export default function ConnectPanel(props) {
@@ -59,6 +60,7 @@ export default function ConnectPanel(props) {
         : await api.connectZip(file, file.name.replace(/\.zip$/i, ''), existingRepoId)
       const repositoryId = result.repository && result.repository.id
       if (!repositoryId) throw new Error('The index finished without returning a repository ID.')
+      notify(existingRepoId ? 'The new revision is indexed and ready.' : 'Your codebase is indexed and ready to explore.', 'success', existingRepoId ? 'Revision ready' : 'Codebase connected')
       if (props.onComplete) props.onComplete(result)
       else navigate('/repositories/' + repositoryId)
     } catch (err) {

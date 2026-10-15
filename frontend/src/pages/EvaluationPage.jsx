@@ -3,6 +3,7 @@ import { ChevronDown, LoaderCircle, Play, Plus, RotateCcw, Trash2 } from 'lucide
 import { useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import RepoNav from '../components/repository/RepoNav'
+import { notify } from '../lib/ToastContext'
 
 function newCase() { return { id: Date.now() + '-' + Math.random(), question: '', paths: '' } }
 function metric(value, suffix) {
@@ -84,6 +85,7 @@ export default function EvaluationPage() {
     setRunning(true)
     try {
       setResult(await api.runEvaluation(repositoryId, { version_id: versionId || null, k: Number(k), cases: normalized }))
+      notify('Hybrid and semantic retrieval metrics are ready.', 'success', 'Evaluation complete')
     } catch (err) {
       setError(err.message || 'Evaluation could not run.')
     } finally {

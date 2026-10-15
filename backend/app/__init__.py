@@ -1,1 +1,1 @@
-"""GitContext API application."""
+"""EVZAX API application."""

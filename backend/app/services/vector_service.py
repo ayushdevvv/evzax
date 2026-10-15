@@ -35,6 +35,18 @@ def _ensure_mongo_indexes() -> None:
     chunks = get_db().repo_chunks
     chunks.create_index([("repo_id", ASCENDING), ("version_id", ASCENDING), ("source_kind", ASCENDING)])
     chunks.create_index([("repo_id", ASCENDING), ("source_kind", ASCENDING)])
+    # Migrate the earlier index definition if it used the `language` metadata field
+    # as MongoDB's language override. Values such as "javascript" are not valid
+    # MongoDB text-search languages and cause every upsert/search to fail.
+    try:
+        for index_name, index_info in chunks.index_information().items():
+            keys = index_info.get("key", [])
+            is_text_index = any(key == "_fts" or kind == "text" for key, kind in keys)
+            if is_text_index and index_info.get("language_override", "language") != "textSearchLanguage":
+                chunks.drop_index(index_name)
+    except OperationFailure:
+        # A concurrent worker may be creating or dropping the same index.
+        pass
     try:
         chunks.create_index(
             [("content", TEXT), ("file_path", TEXT), ("symbol", TEXT), ("document_name", TEXT)],

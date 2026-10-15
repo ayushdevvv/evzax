@@ -86,6 +86,12 @@ JINA_EMBEDDING_MODEL=jina-embeddings-v2-base-code
 GROQ_API_KEY=your_groq_key
 GROQ_MODEL=openai/gpt-oss-120b
 FRONTEND_ORIGIN=http://localhost:5173
+AUTH_JWT_SECRET=use_a_unique_random_secret_at_least_32_characters_long
+AUTH_JWT_ISSUER=evzax
+AUTH_COOKIE_NAME=evzax_session
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_SAMESITE=lax
+AUTH_SESSION_MINUTES=10080
 MAX_UPLOAD_MB=40
 MAX_REPOSITORY_FILES=1200
 MAX_FILE_BYTES=500000
@@ -95,7 +101,7 @@ MAX_DOCUMENT_PAGES=300
 MAX_DOCUMENT_CHUNKS=1200
 ```
 
-Do not commit `.env`. The root `.gitignore` ignores real environment files and permits only `.env.example` templates.
+Do not commit `.env`. The root `.gitignore` ignores real environment files and permits only `.env.example` templates. EVZAX now uses server backed accounts, scrypt password hashing, JWT session cookies, revocable MongoDB sessions, login throttling, and repository ownership checks. For a deployed frontend and API on separate sites, set `AUTH_COOKIE_SECURE=true` and `AUTH_COOKIE_SAMESITE=none`, configure the exact deployed `FRONTEND_ORIGIN`, and use HTTPS for both. Use a cryptographically random JWT secret of at least 32 characters.
 
 ### 2. Create the Pinecone index
 
@@ -174,7 +180,7 @@ gitcontext/
 - MongoDB text indexing and vector operations require cloud access. No local vector store, local embedding model, or local upload persistence is used.
 - If MongoDB SRV DNS times out, verify the Atlas cluster hostname, database user, Network Access allowlist, active cluster, and DNS/network access. The error occurs before GridFS can store the upload.
 - Embedding or Groq errors are returned as API errors. Quotas and availability depend on the providers and account plan.
-- Evzax is a local development product, not yet a safe public multi tenant service. Before public deployment, add authentication, per user repository ownership, private repository OAuth, rate limits, background indexing, audit logging, durable job state, and an access policy for downloaded files.
+- EVZAX now has cookie based authentication and per account repository ownership checks. Before a high traffic public launch, add distributed request rate limits, background indexing jobs, audit logging, durable job state, and operational monitoring. Private GitHub repositories are not supported by the public URL connector.
 - Secret detection is best effort. Do not upload repositories that contain credentials unless you have reviewed and sanitized them first.
 
 ## Tests
@@ -190,7 +196,7 @@ Tests cover source filtering and line chunking, adaptive retrieval routing, and 
 
 Evzax stores each chunk's programming language in the `language` field. MongoDB text indexes also use a field named `language` as their default per-document text-search language override, which makes values such as `javascript` invalid. The index configuration now uses `textSearchLanguage` for that override instead.
 
-If you created the old `gitcontext_chunks_text` index before updating, drop that text index once in MongoDB Atlas Data Explorer (collection `repo_chunks`, Indexes tab) or with `mongosh`:
+The backend now checks for and drops an incompatible legacy text index before recreating the corrected one. If the index cannot be migrated due to Atlas permissions, drop the old text index manually in MongoDB Atlas Data Explorer (collection `repo_chunks`, Indexes tab):
 
 ```javascript
 use <your-configured-database-name>

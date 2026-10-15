@@ -14,7 +14,7 @@ notepad .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Configure MongoDB Atlas, Pinecone, Jina AI, and Groq credentials in `.env`. Never commit it. Create a Pinecone dense index named `gitcontext-code` with 768 dimensions and cosine similarity for `jina-embeddings-v2-base-code`.
+Configure MongoDB Atlas, Pinecone, Jina AI, Groq, and authentication settings in `.env`. Set `AUTH_JWT_SECRET` to a unique random value of at least 32 characters. Never commit `.env`. For production cross site cookies, set `AUTH_COOKIE_SECURE=true`, `AUTH_COOKIE_SAMESITE=none`, and the exact frontend origin; HTTPS is required. Create a Pinecone dense index named `gitcontext-code` with 768 dimensions and cosine similarity for `jina-embeddings-v2-base-code`.
 
 ## Main API operations
 
@@ -34,6 +34,13 @@ Configure MongoDB Atlas, Pinecone, Jina AI, and Groq credentials in `.env`. Neve
 - `POST /api/repositories/{id}/evaluation`: compare semantic versus hybrid retrieval on labeled questions.
 
 OpenAPI and API documentation endpoints are disabled in `app/main.py` by design. These routes are consumed by the React UI.
+
+## Authentication and access
+
+- Signup and login use server side accounts with scrypt password hashes. A signed JWT is stored in an HttpOnly cookie and backed by a revocable MongoDB session.
+- Repository endpoints require an authenticated session. New repositories store their owner ID and are only visible to that account.
+- Existing records without an owner ID are not automatically assigned to an account. Review and migrate legacy records explicitly before production use.
+- Client error messages are normalized; provider and database exception details remain server side.
 
 ## Storage model
 

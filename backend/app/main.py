@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes.health import router as health_router
+from app.api.routes.auth import router as auth_router
 from app.api.routes.repositories import router as repositories_router
 from app.core.config import settings
 from app.db.mongo import close_client
@@ -16,9 +18,11 @@ async def lifespan(_: FastAPI):
     close_client()
 
 
+logger = logging.getLogger("evzax.api")
+
 app = FastAPI(
-    title="GitContext API",
-    description="Codebase retrieval and revision intelligence for GitContext.",
+    title="EVZAX",
+    description="Codebase retrieval and revision intelligence.",
     version="0.1.0",
     lifespan=lifespan,
     docs_url=None,
@@ -33,6 +37,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 app.include_router(repositories_router, prefix="/api")
 
 
@@ -44,4 +49,11 @@ async def clean_http_errors(_, exc: StarletteHTTPException):
 
 @app.get("/")
 def root():
-    return {"name": "GitContext", "status": "ready", "message": "API is running."}
+    return {"name": "EVZAX", "status": "ready", "message": "Service is running."}
+
+
+@app.exception_handler(Exception)
+async def clean_unexpected_errors(_, exc: Exception):
+    # Full exception details stay in server logs only. Never send SDK, database, or path details to clients.
+    logger.exception("Unhandled request error", exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again shortly."})

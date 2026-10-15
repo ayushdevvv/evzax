@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     github_token: str = ""
     frontend_origin: str = "http://localhost:5173"
+    auth_jwt_secret: str = ""
+    auth_jwt_issuer: str = "evzax"
+    auth_cookie_name: str = "evzax_session"
+    auth_cookie_secure: bool = False
+    auth_cookie_samesite: str = "lax"
+    auth_session_minutes: int = 10080
     max_upload_mb: int = 40
     max_repository_files: int = 1200
     max_file_bytes: int = 500_000

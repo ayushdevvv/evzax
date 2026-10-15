@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { formatDate, formatNumber } from '../lib/format'
 import RepoNav from '../components/repository/RepoNav'
+import { notify } from '../lib/ToastContext'
 
 const MAX_SIZE = 20 * 1024 * 1024
 const ACCEPTED = '.pdf,.docx,.md,.mdx,.txt,.rst,.csv,.json,.yaml,.yml,.html,.log'
@@ -80,6 +81,7 @@ export default function DocumentsPage() {
     try {
       const result = await api.uploadDocument(repositoryId, file)
       setNotice(result.duplicate ? 'Already indexed.' : 'Indexed. It is now part of chat.')
+      notify(result.duplicate ? 'This document is already in your library.' : 'Your document is indexed and ready to query.', result.duplicate ? 'info' : 'success', result.duplicate ? 'Already indexed' : 'Document ready')
       setFile(null)
       if (inputRef.current) inputRef.current.value = ''
       await load()
@@ -97,6 +99,7 @@ export default function DocumentsPage() {
       await api.deleteDocument(repositoryId, documentId)
       setDocuments(function (current) { return current.filter(function (doc) { return doc.id !== documentId }) })
       setNotice('Document removed.')
+      notify('The document and its indexed passages were removed.', 'success', 'Document removed')
     } catch (err) {
       setError(err.message || 'Could not remove the document.')
     } finally {

@@ -15,7 +15,7 @@ def get_client() -> MongoClient:
             settings.mongodb_uri,
             serverSelectionTimeoutMS=6000,
             connectTimeoutMS=6000,
-            appname="GitContext",
+            appname="EVZAX",
         )
     return _client
 

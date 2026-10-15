@@ -44,7 +44,7 @@ def _github_headers() -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "GitContext-Codebase-Index",
+        "User-Agent": "EVZAX-Codebase-Index",
     }
     if settings.github_token:
         headers["Authorization"] = f"Bearer {settings.github_token}"
@@ -111,7 +111,7 @@ def fetch_github_snapshot(repo_url: str, ref: str | None = None) -> dict:
             def fetch_one(item):
                 path, _expected_size = item
                 try:
-                    response = client.get(f"{raw_base}/{quote(path, safe='/')}", headers={"User-Agent": "GitContext-Codebase-Index"})
+                    response = client.get(f"{raw_base}/{quote(path, safe='/')}", headers={"User-Agent": "EVZAX-Codebase-Index"})
                     return path, response.status_code, response.content if response.status_code == 200 else b""
                 except httpx.HTTPError:
                     return path, 0, b""
@@ -225,12 +225,15 @@ def _serialize_repo(document: dict) -> dict:
     data["id"] = str(data.pop("_id", data.get("id", "")))
     # The full path hash manifest is retained for server side diffs, not sent to the browser.
     data.pop("file_hashes", None)
+    data.pop("error", None)
+    data.pop("owner_id", None)
     return data
 
 
-def list_repositories() -> list[dict]:
+def list_repositories(owner_id: str | None = None) -> list[dict]:
     db = get_db()
-    items = list(db.repositories.find({}, {"_id": 1, "name": 1, "source_type": 1, "source_url": 1, "default_branch": 1,
+    query = {"owner_id": owner_id} if owner_id else {}
+    items = list(db.repositories.find(query, {"_id": 1, "name": 1, "source_type": 1, "source_url": 1, "default_branch": 1,
         "current_version_id": 1, "current_revision": 1, "status": 1, "file_count": 1, "chunk_count": 1,
         "created_at": 1, "updated_at": 1}).sort("updated_at", -1).limit(100))
     return [_serialize_repo(item) for item in items]
@@ -289,17 +292,18 @@ def compare_versions(repo_id: str, from_version_id: str, to_version_id: str) -> 
     }
 
 
-def _create_repo_if_needed(snapshot: dict, existing_repo_id: str | None) -> tuple[str, dict]:
+def _create_repo_if_needed(snapshot: dict, existing_repo_id: str | None, owner_id: str | None = None) -> tuple[str, dict]:
     db = get_db()
     now = utc_now()
     if existing_repo_id:
         existing = db.repositories.find_one({"_id": existing_repo_id})
-        if not existing:
+        if not existing or (owner_id and existing.get("owner_id") != owner_id):
             raise HTTPException(status_code=404, detail="Repository to update was not found.")
         return existing_repo_id, existing
     repo_id = str(uuid.uuid4())
     repo = {
         "_id": repo_id,
+        "owner_id": owner_id,
         "name": snapshot["name"],
         "source_type": snapshot["source_type"],
         "source_url": snapshot.get("source_url"),
@@ -318,9 +322,9 @@ def _create_repo_if_needed(snapshot: dict, existing_repo_id: str | None) -> tupl
     return repo_id, repo
 
 
-def index_snapshot(snapshot: dict, existing_repo_id: str | None = None) -> dict:
+def index_snapshot(snapshot: dict, existing_repo_id: str | None = None, owner_id: str | None = None) -> dict:
     db = get_db()
-    repo_id, repo = _create_repo_if_needed(snapshot, existing_repo_id)
+    repo_id, repo = _create_repo_if_needed(snapshot, existing_repo_id, owner_id)
     files: list[CodeFile] = snapshot["files"]
     version_id = str(uuid.uuid4())
     previous_version_id = repo.get("latest_version_id") or repo.get("current_version_id")
@@ -453,7 +457,7 @@ def sync_github_repository(repo_id: str) -> dict:
     latest_revision = repo.get("latest_revision") or repo.get("current_revision")
     if snapshot.get("commit_sha") and snapshot.get("commit_sha") == latest_revision:
         return {"repository": repo, "version": None, "unchanged": True}
-    return index_snapshot(snapshot, existing_repo_id=repo_id)
+    return index_snapshot(snapshot, existing_repo_id=repo_id, owner_id=repo.get("owner_id"))
 
 
 def activate_version(repo_id: str, version_id: str) -> dict:
