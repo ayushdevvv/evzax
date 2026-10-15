@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -45,6 +46,12 @@ app.include_router(repositories_router, prefix="/api")
 async def clean_http_errors(_, exc: StarletteHTTPException):
     detail = exc.detail if isinstance(exc.detail, str) else "The request could not be completed."
     return JSONResponse(status_code=exc.status_code, content={"detail": detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def clean_validation_errors(_, exc: RequestValidationError):
+    # The default body echoes submitted values (including passwords) back in "input".
+    return JSONResponse(status_code=422, content={"detail": "Please check the information and try again."})
 
 
 @app.get("/")

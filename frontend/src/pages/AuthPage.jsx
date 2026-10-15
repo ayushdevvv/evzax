@@ -3,6 +3,7 @@ import { Eye, EyeOff, LoaderCircle, Lock, Mail, User } from 'lucide-react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import Brand from '../components/Brand'
 import { useAuth } from '../lib/AuthContext'
+import { RouteLoading } from '../components/ProtectedRoute'
 import { useToast } from '../lib/ToastContext'
 
 export default function AuthPage(props) {
@@ -17,9 +18,11 @@ export default function AuthPage(props) {
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const target = (location.state && location.state.from) || '/workspace'
+  // Only same-site paths: never follow a protocol-relative or absolute URL from router state.
+  const from = location.state && location.state.from
+  const target = typeof from === 'string' && /^\/(?!\/)/.test(from) && !/^\/(login|signup)/.test(from) ? from : '/workspace'
 
-  if (auth.loading) return <main className="route-loading"><span className="loading-orbit" /><p>Restoring your workspace</p></main>
+  if (auth.loading) return <RouteLoading waking={auth.waking} />
   if (auth.user) return <Navigate to={target} replace />
 
   function handleName(event) { setName(event.target.value) }
@@ -39,10 +42,11 @@ export default function AuthPage(props) {
       else await auth.signIn(email, password)
       toast(signup ? 'Your workspace is ready.' : 'Welcome back to EVZAX.', 'success', signup ? 'Account created' : 'Signed in')
       navigate(target, { replace: true })
+      return
     } catch (err) {
       setError(err.message || 'Could not sign in. Please try again.')
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   return (

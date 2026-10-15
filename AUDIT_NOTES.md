@@ -50,3 +50,34 @@
 - Python bytecode compilation completed.
 - Pytest could not collect tests in this environment because `pymongo` is not installed; tests are not claimed to pass.
 - Frontend build was not verified because dependency installation did not complete in the sandbox. Run `npm ci` then `npm run build`.
+
+
+## Auth conflicts, session state and fetch capacity pass
+
+Auth conflicts fixed
+- Wrong password, duplicate email and "too many attempts" now show the backend's own message instead of "Please sign in again" / "conflicts with the current state". 4xx details are shown only when they are short plain strings; 5xx stays generic.
+- Auth form errors no longer also fire a toast (one message, not two). Health polling and the boot `/auth/me` check are silent, so an API that is down no longer toasts every 30 seconds.
+- Logout is idempotent: it clears the cookie and succeeds even if the session already expired.
+- Successful login clears that email/IP's failed-attempt counter (previously 7 old typos still counted toward the limit).
+- `AUTH_TRUST_PROXY=true` makes throttling use the real client IP (last X-Forwarded-For hop). Without it, behind Render every user shares the proxy IP, so anyone could lock a victim out by failing 8 logins for their email.
+- Unknown-email logins now spend the same hashing time as wrong-password logins.
+- `SameSite=None` now forces `Secure` (browsers silently drop the cookie otherwise); invalid SameSite values fall back to `lax`.
+- Auth responses send `Cache-Control: no-store`. 422 validation errors no longer echo submitted values.
+- Post-login redirect only accepts same-site paths.
+
+State changes fixed
+- Any 401 from an API call now signs the UI out and returns to /login with the original page remembered (before, the user stayed "signed in" and every page just errored).
+- A server blip or cold start during the session check no longer logs you out: the boot check retries (1.5s, 3s, 6s), then shows a retry screen instead of redirecting to /login.
+- Sign-in/out bumps an epoch so a slower older `/auth/me` response cannot overwrite the new state.
+- Sign-out always clears local state first; focus/visibility re-check picks up sign-outs from other tabs.
+- The sidebar keeps its last good repository list when a refresh fails and refetches on account change.
+- Identical toasts within 3 seconds are collapsed.
+
+Fetch capacity
+- GitHub repositories are now read from one archive download (1 API call) instead of one request per file, with the per-file path kept as a fallback for repositories over `MAX_ARCHIVE_MB`.
+- Defaults raised: 4000 files, 1 MB per file, 8000 chunks, 100 MB per repository (all env-tunable); parallel fallback fetch raised from 12 to 24 workers.
+- GitHub rate-limit responses (403 with remaining=0, or 429) now report a reset time in minutes, are not retried pointlessly, and no longer leak the provider URL in a 502.
+
+Not verified here
+- Backend dependencies and `npm ci` were unavailable in the sandbox. Only the archive reader and client-IP logic were exercised in isolation; the new pytest files and the Vite build need a run on your machine.
+- Signup has no rate limit yet. Safari and some browsers block third-party cookies between vercel.app and onrender.com; a custom domain for both (or proxying /api through the frontend host) is the durable fix.

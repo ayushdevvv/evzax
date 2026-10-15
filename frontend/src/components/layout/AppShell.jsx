@@ -20,9 +20,9 @@ export default function AppShell() {
     let active = true
     api.repositories()
       .then(function (data) { if (active) setRepositories(data.repositories || []) })
-      .catch(function () { if (active) setRepositories([]) })
+      .catch(function () { /* keep the last good list; a blip must not empty the sidebar */ })
     return function () { active = false }
-  }, [location.pathname])
+  }, [location.pathname, auth.user && auth.user.id])
 
   useEffect(function () {
     let active = true
@@ -57,7 +57,7 @@ export default function AppShell() {
   }
   function closeMenu() { setMenuOpen(false) }
   function toggleUserMenu() { setUserMenu(function (value) { return !value }) }
-  function logout() { setUserMenu(false); auth.signOut() }
+  function logout() { setUserMenu(false); setRepositories([]); auth.signOut() }
   const initial = auth.user && auth.user.name ? auth.user.name.trim().charAt(0).toUpperCase() : 'U'
 
   const healthLabel = health === 'online' ? 'API online' : health === 'offline' ? 'API offline' : 'Checking API'

@@ -13,7 +13,13 @@ export function ToastProvider({ children }) {
     timers.current.delete(id)
     setItems((current) => current.filter((item) => item.id !== id))
   }, [])
+  const recent = useRef(new Map())
   const toast = useCallback((message, type = 'success', title) => {
+    // Several requests failing together (or a retry loop) must not stack identical toasts.
+    const key = `${type}|${title || ''}|${message}`
+    const now = Date.now()
+    if (now - (recent.current.get(key) || 0) < 3000) return null
+    recent.current.set(key, now)
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const safeType = icons[type] ? type : 'info'
     setItems((current) => [...current.slice(-3), { id, message: String(message || 'Please try again.'), type: safeType, title: title || ({ success: 'Done', error: 'Could not complete', warning: 'Check this', info: 'Notice' }[safeType]) }])

@@ -129,7 +129,14 @@ def _digest(value: str) -> str:
 
 
 def _request_ip(request: Request) -> str:
-    # Do not trust X-Forwarded-For unless a trusted proxy is configured.
+    # Behind Render/another proxy request.client is the proxy for every user, which makes
+    # the throttle global per email. With AUTH_TRUST_PROXY the last forwarded hop (the one
+    # appended by our own proxy, not by the client) is used instead.
+    if settings.auth_trust_proxy:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        if hops:
+            return hops[-1]
     return request.client.host if request.client else "unknown"
 
 
@@ -145,6 +152,17 @@ def _record_failed_login(email: str, request: Request) -> None:
         "created_at": now,
         "expires_at": now + _AUTH_WINDOW,
     })
+
+
+def _clear_failed_logins(email: str, request: Request) -> None:
+    try:
+        get_db().auth_attempts.delete_many({"email_hash": _digest(email), "ip_hash": _digest(_request_ip(request))})
+    except PyMongoError:
+        return  # Best effort. Entries expire on their own.
+
+
+# Constant-cost decoy so unknown emails take as long to reject as wrong passwords.
+_DECOY_SALT = b"evzax-decoy-salt!"
 
 
 def _check_login_limit(email: str, request: Request) -> None:
@@ -192,10 +210,15 @@ def authenticate_account(email: str, password: str, request: Request) -> dict:
     _check_login_limit(normalized_email, request)
     db = get_db()
     user = db.users.find_one({"email": normalized_email})
-    good = bool(user and _verify_password(password, user.get("password_salt", ""), user.get("password_hash", "")))
+    if user:
+        good = _verify_password(password, user.get("password_salt", ""), user.get("password_hash", ""))
+    else:
+        _hash_password(password, _DECOY_SALT)
+        good = False
     if not good:
         _record_failed_login(normalized_email, request)
         raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+    _clear_failed_logins(normalized_email, request)
     return {"id": user["_id"], "name": user["name"], "email": user["email"]}
 
 

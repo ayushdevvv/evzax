@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+import time
+
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
 
-from app.core.auth import authenticate_account, create_account, current_user, optional_user, revoke_session, start_session
+from app.core.auth import authenticate_account, create_account, optional_user, revoke_session, start_session
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -31,15 +33,23 @@ def _set_session_cookie(response: Response, token: str, max_age: int) -> None:
     )
 
 
+def _no_store(response: Response) -> None:
+    # Session state must never be served from a browser or CDN cache.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Vary"] = "Cookie"
+
+
 def _start(user: dict, response: Response) -> dict:
     token, _, expiry = start_session(user)
-    max_age = max(1, int((expiry.timestamp() - __import__("time").time())))
+    max_age = max(1, int(expiry.timestamp() - time.time()))
     _set_session_cookie(response, token, max_age)
+    _no_store(response)
     return {"user": user}
 
 
 @router.get("/me")
-def auth_me(request: Request):
+def auth_me(request: Request, response: Response):
+    _no_store(response)
     return {"user": optional_user(request)}
 
 
@@ -70,7 +80,10 @@ def login(payload: LoginPayload, request: Request, response: Response):
 
 
 @router.post("/logout")
-def logout(request: Request, response: Response, user: dict = Depends(current_user)):
+def logout(request: Request, response: Response):
+    # Idempotent on purpose: signing out with an expired or already-revoked session must
+    # still clear the cookie and succeed, otherwise the UI is stuck "signed in".
+    _no_store(response)
     revoke_session(request.cookies.get(settings.auth_cookie_name))
     response.delete_cookie(
         key=settings.auth_cookie_name,
